@@ -2,13 +2,13 @@ import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
-import { auth } from "./config/auth.js";
-import { usersCollection } from "./config/db.js";
-import userRoutes from "./routes/user.routes.js";
-import tuitionRoutes from "./routes/tuition.routes.js";
-import applicationRoutes from "./routes/application.routes.js";
-import adminRoutes from "./routes/admin.routes.js";
-import paymentRoutes from "./routes/payment.routes.js";
+import { auth } from "../config/auth.js";
+import { usersCollection } from "../config/db.js";
+import userRoutes from "../routes/user.routes.js";
+import tuitionRoutes from "../routes/tuition.routes.js";
+import applicationRoutes from "../routes/application.routes.js";
+import adminRoutes from "../routes/admin.routes.js";
+import paymentRoutes from "../routes/payment.routes.js";
 
 const app = express();
 
