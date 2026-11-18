@@ -58,7 +58,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 
 app.get("/", (req, res) => {
-  res.send({ status: "OK", message: "MentorLagbe API is running" });
+  res.send({ status: "OK", message: "MentorLagbe API is running correctly" });
 });
 
 export default app;
