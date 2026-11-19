@@ -1,39 +1,53 @@
+import "dotenv/config";
 import express from "express";
 import Stripe from "stripe";
-import { usersCollection, paymentsCollection } from "../config/db.js";
+import { db } from "../config/db.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Create Stripe Checkout Session ($15 Tutor Pro, $10 Student Pro)
+// 1. Create Stripe Checkout Session
 router.post("/create-checkout-session", verifyToken, async (req, res) => {
   try {
-    const user = await usersCollection.findOne({ email: req.user.email });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({ message: "STRIPE_SECRET_KEY is missing in server .env" });
+    }
+
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const dbUser = await db.collection("users").findOne({ email: req.user.email });
+    const user = dbUser || req.user;
+
+    if (user.plan === "pro") {
+      return res.status(400).json({ message: "You are already subscribed to Pro" });
+    }
 
     const isTutor = user.role === "tutor";
     const amount = isTutor ? 15 : 10;
-    const planName = isTutor ? "Pro Tutor Plan" : "Pro Student Plan";
+    const planName = isTutor ? "Tutor Pro Plan" : "Student Pro Plan";
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
       mode: "payment",
       customer_email: user.email,
       line_items: [
         {
           price_data: {
             currency: "usd",
-            product_data: { name: `MentorLagbe - ${planName}` },
+            product_data: {
+              name: `MentorLagbe — ${planName}`,
+              description: isTutor
+                ? "Unlimited tuition batch postings & Verified Pro Educator badge"
+                : "Priority tutor application placement & Verified Pro Learner badge",
+            },
             unit_amount: amount * 100,
           },
           quantity: 1,
         },
       ],
       metadata: {
+        userId: (user._id || user.id || "").toString(),
         userEmail: user.email,
-        userName: user.name,
-        userRole: user.role,
+        userName: user.name || user.email.split("@")[0],
+        userRole: user.role || "student",
         planName,
         amount: String(amount),
       },
@@ -41,46 +55,51 @@ router.post("/create-checkout-session", verifyToken, async (req, res) => {
       cancel_url: `${process.env.CLIENT_URL}/payment/cancel`,
     });
 
-    res.send({ url: session.url });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to create checkout session" });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("Stripe Checkout Error:", err);
+    res.status(500).json({ message: err.message || "Failed to create Stripe session" });
   }
 });
 
-// Verify Stripe Session on /payment/success & sync DB
+// 2. Verify Session & Upgrade User Plan in MongoDB
 router.post("/verify-session", verifyToken, async (req, res) => {
   try {
     const { sessionId } = req.body;
+    if (!sessionId) return res.status(400).json({ message: "Session ID is required" });
+
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.payment_status !== "paid") {
       return res.status(400).json({ message: "Payment not completed" });
     }
 
-    const existingPayment = await paymentsCollection.findOne({ stripeSessionId: session.id });
-    if (!existingPayment) {
-      await paymentsCollection.insertOne({
+    const paymentsCol = db.collection("payments");
+    const existing = await paymentsCol.findOne({ transactionId: session.payment_intent });
+
+    if (!existing) {
+      await paymentsCol.insertOne({
         userEmail: session.metadata.userEmail,
         userName: session.metadata.userName,
         userRole: session.metadata.userRole,
         planName: session.metadata.planName,
         amount: Number(session.metadata.amount),
-        currency: session.currency.toUpperCase(),
+        currency: "USD",
         transactionId: session.payment_intent,
-        stripeSessionId: session.id,
-        paymentStatus: "paid",
         paidAt: new Date(),
       });
-
-      await usersCollection.updateOne(
-        { email: session.metadata.userEmail },
-        { $set: { plan: "pro" } }
-      );
     }
 
-    res.send({ success: true, plan: "pro" });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to verify payment session" });
+    await db.collection("users").updateOne(
+      { email: req.user.email },
+      { $set: { plan: "pro" } }
+    );
+
+    res.json({ success: true, plan: "pro" });
+  } catch (err) {
+    console.error("Stripe Verify Error:", err);
+    res.status(500).json({ message: err.message || "Payment verification failed" });
   }
 });
 
