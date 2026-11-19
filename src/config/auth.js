@@ -2,6 +2,8 @@ import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { db } from "./db.js";
 
+const isProd = process.env.NODE_ENV === "production";
+
 export const auth = betterAuth({
   database: mongodbAdapter(db),
   baseURL: process.env.BETTER_AUTH_URL,
@@ -9,29 +11,25 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    },
+  },
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: isProd ? "none" : "lax",
+      secure: isProd,
+    },
+  },
   user: {
     modelName: "users",
     additionalFields: {
-      role: {
-        type: "string",
-        required: true,
-        defaultValue: "student",
-      },
-      plan: {
-        type: "string",
-        required: true,
-        defaultValue: "free",
-      },
-      phone: {
-        type: "string",
-        required: false,
-        defaultValue: "",
-      },
-      bio: {
-        type: "string",
-        required: false,
-        defaultValue: "",
-      },
+      role: { type: "string", required: true, defaultValue: "student" },
+      plan: { type: "string", required: true, defaultValue: "free" },
+      phone: { type: "string", required: false, defaultValue: "" },
+      bio: { type: "string", required: false, defaultValue: "" },
     },
   },
 });
